@@ -127,6 +127,13 @@
   tags:
     - vrouter
 
+- name: create contrail vpp
+  include_role:
+    name: contrail_vpp
+  when: roles[instance_name].vpp is defined
+  tags:
+    - vpp
+
 - name: create contrail vrouter
   include_role:
     name: contrail_vrouter_windows

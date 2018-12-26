@@ -1,7 +1,7 @@
 ---
-- name: "create /etc/contrail/vrouter"
+- name: "create /etc/contrail/vpp"
   file:
-    path: /etc/contrail/vrouter
+    path: /etc/contrail/vpp
     state: directory
     recurse: yes
 
@@ -23,8 +23,8 @@
 
 - name: "get pop"
   set_fact:
-    location: "{{ roles[instance_name].vrouter.location }}"
-  when: roles[instance_name].vrouter.location is defined
+    location: "{{ roles[instance_name].vpp.location }}"
+  when: roles[instance_name].vpp.location is defined
 
 - name: "init pop control peer list"
   set_fact:
@@ -46,12 +46,12 @@
 - name: "create contrail_configuration.CONTROL_NODES"
   set_fact:
     contrail_configuration: "{{ contrail_configuration|default({})|combine({'CONTROL_NODES': pop_control_nodes}) }}"
-  when: pop_control_nodes is defined and roles[instance_name].vrouter.CONTROL_NODES is undefined
+  when: pop_control_nodes is defined and roles[instance_name].vpp.CONTROL_NODES is undefined
 
 - name: "set DNS servers if location is defined"
   set_fact:
     contrail_configuration: "{{ contrail_configuration|default({})|combine({'DNS_NODES': contrail_configuration.DNS_NODES|default(contrail_configuration.CONTROLLER_NODES)}) }}"
-  when: pop_control_nodes is defined and roles[instance_name].vrouter.DNS_NODES is undefined
+  when: pop_control_nodes is defined and roles[instance_name].vpp.DNS_NODES is undefined
 
 - name: "populate cluster wide common_vrouter.env"
   lineinfile: dest=/etc/contrail/common_vrouter.env regexp='^{{ item.key }}=.*' line="{{ item.key }}={{ item.value }}" state=present
@@ -67,7 +67,7 @@
 
 - name: "populate pod specific common_vrouter.env"
   lineinfile: dest=/etc/contrail/common_vrouter.env regexp='^{{ item.key }}=.*' line="{{ item.key }}={{ item.value }}" state=present
-  with_dict: "{{ roles[instance_name].vrouter }}"
+  with_dict: "{{ roles[instance_name].vpp }}"
   ignore_errors: yes
   no_log: True
 
@@ -88,70 +88,60 @@
   lineinfile: dest=/etc/contrail/common_vrouter.env regexp='^SUBCLUSTER=.*' line="SUBCLUSTER={{ location }}" state=present
   when: location is defined and remote_locations[location].SUBCLUSTER is undefined
 
-- name: set vrouter kernel init image name
-  set_fact:
-    vrouter_kernel_init_img_name: contrail-vrouter-kernel-build-init
-  when: ansible_os_family == 'Debian'
-
-- name: set vrouter kernel init image name
-  set_fact:
-    vrouter_kernel_init_img_name: contrail-vrouter-kernel-init
-  when: ansible_os_family == 'RedHat'
-
-- name: update image
+- name: update vpp image
   shell: "docker pull {{ container_registry }}/{{ item }}:{{ contrail_version_tag }}"
   with_items:
     - contrail-node-init
     - contrail-nodemgr
-    - "{{ vrouter_kernel_init_img_name }}"
-    - contrail-vrouter-agent
+    - contrail-vpp-kernel-init
+    - contrail-vpp-agent
   when:
     - contrail_configuration.UPDATE_IMAGES is undefined or contrail_configuration.UPDATE_IMAGES != false
-    - roles[instance_name].vrouter.AGENT_MODE is undefined or roles[instance_name].vrouter.AGENT_MODE != 'dpdk'
+    - roles[instance_name].vpp.AGENT_MODE is undefined or roles[instance_name].vpp.AGENT_MODE != 'dpdk'
 
-- name: create contrail vrouter compose file
+- name: create contrail vpp compose file
   template:
-    src: contrail-vrouter.yaml.j2
-    dest: "/etc/contrail/vrouter/docker-compose.yaml"
-  when: roles[instance_name].vrouter.AGENT_MODE is undefined or roles[instance_name].vrouter.AGENT_MODE != 'dpdk'
+    src: contrail-vpp.yaml.j2
+    dest: "/etc/contrail/vpp/docker-compose.yaml"
+  when: roles[instance_name].vpp.AGENT_MODE is undefined or roles[instance_name].vpp.AGENT_MODE != 'dpdk'
 
-- name: "start contrail vrouter"
+- name: "start contrail vpp"
   docker_service:
-    project_src: /etc/contrail/vrouter
-  when: roles[instance_name].vrouter.AGENT_MODE is undefined or roles[instance_name].vrouter.AGENT_MODE != 'dpdk'
+    project_src: /etc/contrail/vpp
+  when: roles[instance_name].vpp.AGENT_MODE is undefined or roles[instance_name].vpp.AGENT_MODE != 'dpdk'
 
-- name: update image for dpdk vrouter
+- name: update image for dpdk vpp
   shell: "docker pull {{ container_registry }}/{{ item }}:{{ contrail_version_tag }}"
   with_items:
     - contrail-node-init
     - contrail-nodemgr
-    - contrail-vrouter-kernel-init-dpdk
-    - contrail-vrouter-agent-dpdk
-    - contrail-vrouter-agent
+    - contrail-vpp-kernel-init-dpdk
+    - contrail-vpp-agent-dpdk
+    - contrail-vpp-agent
   when:
     - contrail_configuration.UPDATE_IMAGES is undefined or contrail_configuration.UPDATE_IMAGES != false
-    - roles[instance_name].vrouter.AGENT_MODE is defined
-    - roles[instance_name].vrouter.AGENT_MODE == 'dpdk'
+    - roles[instance_name].vpp.AGENT_MODE is defined
+    - roles[instance_name].vpp.AGENT_MODE == 'dpdk'
 
-- name: "create contrail dpdk vrouter compose file"
+- name: "create contrail dpdk vpp compose file"
   template:
-    src: contrail-vrouter-dpdk.yaml.j2
-    dest: "/etc/contrail/vrouter/docker-compose.yaml"
-  when: roles[instance_name].vrouter.AGENT_MODE is defined and roles[instance_name].vrouter.AGENT_MODE == 'dpdk'
+    src: contrail-vpp-dpdk.yaml.j2
+    dest: "/etc/contrail/vpp/docker-compose.yaml"
+  when: roles[instance_name].vpp.AGENT_MODE is defined and roles[instance_name].vpp.AGENT_MODE == 'dpdk'
 
-- name: "start contrail dpdk vrouter"
+- name: "start contrail dpdk vpp"
   docker_service:
-    project_src: /etc/contrail/vrouter
-  when: roles[instance_name].vrouter.AGENT_MODE is defined and roles[instance_name].vrouter.AGENT_MODE == 'dpdk'
+    project_src: /etc/contrail/vpp
+  when: roles[instance_name].vpp.AGENT_MODE is defined and roles[instance_name].vpp.AGENT_MODE == 'dpdk'
 
 - name: "Restart nova-compute"
   shell: "docker restart nova_compute"
-  when: roles[instance_name].vrouter.AGENT_MODE is defined and roles[instance_name].vrouter.AGENT_MODE == 'dpdk'
+  when: roles[instance_name].vpp.AGENT_MODE is defined and roles[instance_name].vpp.AGENT_MODE == 'dpdk'
   ignore_errors: yes
 
 - name: "fixing contrail bug vrouter-port-control"
   shell: "docker exec --user root nova_compute cp /opt/plugin/bin/vrouter-port-control /usr/bin/"
-  when: roles[instance_name].vrouter.AGENT_MODE is defined and roles[instance_name].vrouter.AGENT_MODE == 'dpdk'
+  when: roles[instance_name].vpp.AGENT_MODE is defined and roles[instance_name].vpp.AGENT_MODE == 'dpdk'
   ignore_errors: yes
 
 - name: "create /var/log/contrail/lbaas"
